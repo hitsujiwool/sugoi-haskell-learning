@@ -90,7 +90,7 @@ instance (Monoid w) => Monad (Writer w) where
 
 読解のポイントは
 
-* 型コンストラクタ `Writer` に`w`のみをを部分適用して、自由引数を1つにした `Writer w` をインスタンス化しているところ (p.154)
+* 型コンストラクタ `Writer` に `w` のみをを部分適用して、自由引数を1つにした `Writer w` をインスタンス化しているところ (p.154)
 * パターンマッチで取り出した `x` を `f` に適用した結果の `Writer` を、さらに `let` 内の'パターンマッチで `y` と `v'` に束縛しているところ
 
 Monadの定義 (p.286) に従っていることも見てとれる。
@@ -214,7 +214,7 @@ gcdReverse a b
         return result
 ```        
 
-```haskell
+```
 ghci> mapM_ putStrLn $ snd $ runWriter (gcdReverse 8 3)
 ```
 
@@ -247,6 +247,7 @@ a ++ (b ++ (c ++ (d ++ (e ++ f))))
 * `fromDiffList` は `DiffList a`の中身に空リストを作用させてリストを返す
 * `mempty` は自身を返す `id`、`mappend` は関数合成import Control.Monad.Writer
 
+```haskell
 newtype DiffList a = DiffList { getDiffList :: [a] -> [a] }
 
 toDiffList :: [a] -> DiffList a
@@ -286,6 +287,7 @@ a (b (c (d (e xs))))
 ```
 ghci> mapM_ putStrLn . fromDiffList . snd . runWriter $ gcdReverse 110 34
 ```
+
 ```
 Finished with 2
 8 mod 2 = 0
@@ -297,7 +299,7 @@ Finished with 2
 
 `DiffList` を使う場合とそうでない場合の性能を比較してみる。
 
-```
+```haskell
 finalCountDown :: Int -> Writer (DiffList String) ()
 finalCountDown 0  = do
     tell (toDiffList ["0"])
@@ -305,7 +307,8 @@ finalCountDown x = do
     finalCountDown (x-1)
     tell (toDiffList [show x])    
 ```
-```
+
+```haskell
 finalCountDown :: Int -> Writer [String] ()
 finalCountDown 0  = do
     tell ["0"]
