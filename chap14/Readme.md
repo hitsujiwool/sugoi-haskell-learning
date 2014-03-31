@@ -1,5 +1,13 @@
 # 第14章　もうちょっとだけモナド
 
+前章では、文脈（失敗するかもしれない、非決定性、IO、etc.）を持った値を扱うための概念としてモナドが導入された。ここでは、ログを取る、スタックを実装するといった他の様々な問題を解決する手段としてのモナドを学ぶ。
+
+登場するのは
+
+* `Writer` モナド
+* `Reader` モナド
+* `State` モナド
+
 ## Writer？　中の人なんていません
 
 まずはじめに「ログを追加する」という機能について考えてみる。ログを追加するとはすなわち、ある関数に文脈のついた値を食べさせて、文脈に新しい情報を追加することなのだから、前章で学んだ `applyMaybe` によく似た `applyLog` を作れそう（まだ出発点なので `>>=` は使わない）。
@@ -130,9 +138,9 @@ do 記法なしの `>>=` と入れ子になったラムダ式 (p.296) でも書�
 
 ```haskell
 multWithLog :: Writer [String] Int
-multWithLog = do
-    logNumber 3 >>= (\x -> logNumber 5 >>= \y -> return (x*y))
+multWithLog = logNumber 3 >>= (\x -> logNumber 5 >>= \y -> return (x*y))
 ```
+
 ```
 ghci> runWriter multWithlog
 ```
@@ -268,7 +276,7 @@ gcdReverse :: Int -> Int -> Writer (DiffList String) Int
 gcdReverse a b
     | b == 0 = do
         tell (toDiffList ["Finished with " ++ show a])
-        return a      
+        return a
     | otherwise = do
         result <- gcdReverse b (a `mod` b)
         tell (toDiffList [show a ++ " mod " ++ show b ++ " = " ++ show (a `mod` b)])
@@ -323,7 +331,7 @@ ghc の[ドキュメント](http://www.haskell.org/ghc/docs/latest/html/users_gu
 
 第11章では関数の型 `(->) r` がファンクターであり、またアプリカティブファンクターであることを学んだ。ここではモナドとしての関数の側面を理解する。
 
-アプリカティブスタイルの関数だけメモしておく。
+まうアプリカティブスタイルの関数についての復習。
 
 ```
 ghci> let f = (+) <$> (*2) <*> (+10)
@@ -364,7 +372,7 @@ addStuff = do
 ghci> addStuff 3
 ```
 
-これは `19` を返す。（どうしてこれがアプリカティブなものと同じ結果を返すのか？　両者の関係は何か？　すみませんまだよくわかりません……）
+これは `19` を返す。（どうしてこれがアプリカティブなものと同じ結果を返すのか？　両者の関係は何か？　もう少し調べる必要がありそう）
 
 `(*2)` と `(+10)` の各々が `3` を参照できるという意味で、関数モナドを Reader モナドと呼ぶこともできる。
 
@@ -375,7 +383,7 @@ addStuff :: Int -> Int
 addStuff = (*2) >>= (\x -> (+10) >>= (\y -> return (x+y)))
 ```
 
-いまいちよくわからない……
+いまいちよくわからない……JavaScriptで書いてみた。
 
 ## 計算の状態の正体
 
@@ -388,6 +396,7 @@ addStuff = (*2) >>= (\x -> (+10) >>= (\y -> return (x+y)))
 ```
 s -> (a, s)
 ```
+
 ここで、`s` は状態の型、`a` は状態付き計算の結果、という風に考える。するとこれもまた、これまで繰り返し取り扱ってきた「文脈」と同じ性質のものだとみえてくる。
 
 ### スタックと石
@@ -445,7 +454,7 @@ instance Monad (State s) where
                                     in g newState
 ```
 
-* `return` は、`State` モナドを返す。
+まず、`return` は、「`runState` を使うと受け取った状態を変更せずに、今もらった `x` と合わせたタプルを返すような関数を返すような `State` モナド」を返す。
 
 次に `>>=` について。これは2つの状態付き計算の糊付けを行う。
 
@@ -461,7 +470,7 @@ instance Monad (State s) where
 2. `f` を `a` に適用し、返り値の `State` モナド、すなわち「状態付き計算」（の中の関数）を `g` に束縛する
 3. `g` を `newState` に適用し、得られたタプルを返す
 
-よくわからない……とりあえず `State` モナドを使ったスタックの再実装を見てみる。
+よくわからない……先に進んで `State` モナドを使ったスタックの再実装を見てみる。
 
 ```haskell
 pop :: State Stack Int
