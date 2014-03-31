@@ -318,3 +318,169 @@ finalCountDown x = do
 ```
 
 ghc の[ドキュメント](http://www.haskell.org/ghc/docs/latest/html/users_guide/profiling.html)によれば、`-prof` オプションをつけてコンパイルした後、`+RTS -p` オプジョンで実行するとプロファイルが見られるそう。
+
+## 計算の状態の正体
+
+状態が問題になるような計算と、純粋関数型言語としての Haskell の橋渡しをするのが `State` モナド。
+
+### 状態付きの計算
+
+状態付きの計算をモデル化する。
+
+```
+s -> (a, s)
+```
+ここで、`s` は状態の型、`a` は状態付き計算の結果、という風に考える。するとこれもまた、これまで繰り返し取り扱ってきた「文脈」と同じ性質のものだとみえてくる。
+
+### スタックと石
+
+例としてスタックのモデル化を考える。スタックは `push` と `pop` の操作を受けつける、後入れ先出しのデータ構造。ここでは2つの操作が、操作後の状態であるところのスタックを、計算の結果と一緒に返すようにする。
+
+```haskell
+type Stack = [Int]
+
+pop :: Stack -> (Int, Stack)
+pop (x:xs) = (x, xs)
+
+push :: Int -> Stac -> ((), Stack)
+push a xs = ((), a:xs)
+```
+
+スタックを実際に操作する関数 `stackManip` も用意する
+
+```haskell
+stackManip :: Stack -> (Int, Stack)
+stackManip stack = let
+    ((), newStack1) = push 3 stack
+    (a, newStack2) = pop newStack1
+  in pop newStack2
+```
+
+```
+ghci> stackManip [5,8,2,1]
+```
+
+これって結局はモナドなのでは？　なので
+
+```haskell
+stackManip = do
+    push 3
+    a <- pop
+    pop
+```
+
+のように簡潔に書けるとうれしい。見た目をきれいだし、なにより「結果の値と現在の状態を取り出して、次の操作に渡す部分、すなわち複数の状態付き計算の糊付けを隠蔽できる」ところが重要。
+
+ということで `State` モナドの導入。
+
+### State モナド
+
+```haskell
+newtype State s a = State { runState :: s -> (a, s) }
+```
+
+```haskell
+instance Monad (State s) where
+    return x = State $ \s -> (x, s)
+    (State h) >>= f = State $ \s -> let (a, newState) = h s
+                                        (State g) = f a
+                                    in g newState
+```
+
+* `return` は、`State` モナドを返す。
+
+次に `>>=` について。これは2つの状態付き計算の糊付けを行う。
+
+まず全体を眺めると、次のようなことがわかる。
+
+1. `>>=` は `State` モナドを返す
+2. パターンマッチで `State` モナドの中の関数 `s -> (a, s)` を `h` に束縛している
+3. そのモナドは、`runState` で 「初期状態を渡したときに、何らかのタプルを返すような関数」を返す
+
+ではその関数はどんなふるまいをするのかというと
+
+1. ユーザが `runState` を実行したときに渡される現在の「状態」`s` に `h` を適用させ、得られた値と新しい「状態」をそれぞれ `a` と `newState` に束縛する
+2. `f` を `a` に適用し、返り値の `State` モナド、すなわち「状態付き計算」（の中の関数）を `g` に束縛する
+3. `g` を `newState` に適用し、得られたタプルを返す
+
+よくわからない……とりあえず `State` モナドを使ったスタックの再実装を見てみる。
+
+```haskell
+pop :: State Stack Int
+pop = state $ \(x:xs) -> (x, xs)
+
+push :: Int -> State Stack ()
+push a = state $ \xs -> ((), a:xs)
+
+stackManip :: State Stack Int
+stackManip = do
+  push 3
+  pop
+  pop
+```
+
+`state` 関数を使って `State s a` 型を返すようにしているのがポイント。
+
+do 記法なしで書くと（こちらの方が `>>=` が見えるので理解の手助けになるかも）
+
+``` haskell
+stackManip :: State Stack Int
+stackManip = push 3 >>= (\x -> pop >>= (\y -> pop))
+```
+
+```
+ghci> runState stackManip [5,8,2,1]
+```
+
+基本的な構造はこれまで扱ってきたさまざまなモナドと同様である。にもかかわらず、わかったようなわからないような……の理由はたぶん
+
+* `runState` は単なるデータのアクセサではなく、引数に初期状態を与えて計算を実行する関数
+* `State` モナドは「状態」ではなく「状態付き計算」
+
+整理のために、以下を実行したときの挙動を追ってみる（とりあえず遅延評価の細かい仕組みは考えない）。
+
+```haskell
+stackManip :: State Stack Int
+stackManip = pop >>= (\x -> pop)
+```
+
+```
+ghci> runState stackManip [5,8,2,1]
+```
+
+上述の、`runState` に初期状態を与えて実行した関数のふるまいに対応した形で書くと
+
+1. `pop` が返す `State` モナドの中の関数を実行することで得られたタプル `(5, [8,2,1])` の要素をそれぞれ `a` と `newState` に束縛する
+2. `(\x -> pop)` に `5` を適用し、返り値の `State` モナドの中の関数を `g` に束縛する
+3. `g` を `[8,2,1]` に適用し、返り値のタプル `(8, [2,1])` を返す
+
+確かに、タプルを分解したり、次に渡したりする処理がうまく隠蔽されている。
+
+### 状態の取得と設定
+
+`get` や `put` を使うと現在の状態を取得したり、書き換えたりできる。
+
+### 乱数と State モナド
+
+さて、`State` モナドと使い方がわかると、節の冒頭で紹介された乱数生成の関数をもっとシンプルに書けるようになる。
+
+```haskell
+random :: (RandomGen g, Random a) => g -> (a, g)
+```
+
+乱数ジェネレータを引数にとり、乱数と新しいジェネレータの組を返すという構造はスタックの例と同じ。
+
+```haskell
+import System.Random
+import Control.Monad.State
+
+randomSt :: (RandomGen g, Random a) => State g a
+randomSt = state random
+
+threeCoins :: State StdGen (Bool, Bool, Bool)
+threeCoins = do
+    a <- randomSt
+    b <- randomSt
+    c <- randomSt
+    return (a, b, c)
+```
