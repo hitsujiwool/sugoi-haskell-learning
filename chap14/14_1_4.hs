@@ -11,8 +11,7 @@ multWithLog = do
     return (a*b)
 
 -- multWithLog :: Writer [String] Int
--- multWithLog = do
---  logNumber 3 >>= (\x -> logNumber 5 >>= \y -> return (x*y))
+-- multWithLog = logNumber 3 >>= (\x -> logNumber 5 >>= \y -> return (x*y))
 
 main :: IO ()
 main = do
